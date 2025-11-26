@@ -103,3 +103,120 @@
   window.__APP_FRONTEND__ = { connectWS, attachListeners, initialPopulate };
   console.log('[app] patched frontend loaded');
 })();
+/* SLIDER HOTFIX — persistent: bind margin slider to ws with debounce + UI feedback */
+(function(){
+  console.log('[SLIDER HOTFIX] init (persisted)');
+  let fb = document.getElementById('__slider_feedback__');
+  if(!fb){
+    fb = document.createElement('div');
+    fb.id = '__slider_feedback__';
+    fb.style.position = 'fixed';
+    fb.style.right = '18px';
+    fb.style.top = '18px';
+    fb.style.padding = '8px 12px';
+    fb.style.background = 'rgba(0,0,0,0.7)';
+    fb.style.color = 'white';
+    fb.style.borderRadius = '8px';
+    fb.style.zIndex = 99999;
+    fb.style.fontFamily = 'monospace';
+    fb.style.fontSize = '13px';
+    fb.style.pointerEvents = 'none';
+    fb.textContent = 'slider: —';
+    document.body.appendChild(fb);
+  }
+  function toast(msg){
+    try{
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.position='fixed';
+      t.style.left='50%';
+      t.style.transform='translateX(-50%)';
+      t.style.bottom='24px';
+      t.style.background='rgba(0,0,0,0.8)';
+      t.style.color='white';
+      t.style.padding='8px 12px';
+      t.style.borderRadius='8px';
+      t.style.zIndex=99999;
+      t.style.fontFamily='monospace';
+      document.body.appendChild(t);
+      setTimeout(()=> t.remove(), 1600);
+    }catch(e){ console.warn('toast err', e); }
+  }
+  function debounce(fn, wait){
+    let t;
+    return function(...a){
+      clearTimeout(t);
+      t = setTimeout(()=>fn.apply(this,a), wait);
+    };
+  }
+  function sendToServer(obj){
+    try{
+      if(window.__LOGWA_WS__ && window.__LOGWA_WS__.readyState===1){
+        window.__LOGWA_WS__.send(JSON.stringify(obj));
+        return 'ws';
+      }
+      if(window.ws && window.ws.readyState===1){
+        window.ws.send(JSON.stringify(obj));
+        return 'ws_fallback';
+      }
+      if(window.socket && typeof window.socket.emit==='function'){
+        window.socket.emit('setMargin', obj);
+        return 'socket';
+      }
+    }catch(e){ console.error('[SLIDER HOTFIX] send err', e); }
+    return null;
+  }
+  function findSlider(){
+    let s = document.getElementById('margin');
+    if(s) return s;
+    s = document.querySelector('input[type=\"range\"]');
+    if(s) return s;
+    s = Array.from(document.querySelectorAll('div,span,input')).find(el => /(margin|pct|initial)/i.test(el.id||el.name||el.className||el.innerText||''));
+    return s || null;
+  }
+  function bindSliderOnce(){
+    const el = findSlider();
+    if(!el) return false;
+    if(el._sliderHotfixBound) return true;
+    el._sliderHotfixBound = true;
+    const liveLabel = (v) => {
+      fb.textContent = 'slider: ' + v + '%';
+      fb.style.opacity = '1';
+      setTimeout(()=> fb.style.opacity = '0.9', 50);
+    };
+    const emit = debounce((val) => {
+      const pct = Number(val);
+      const who = sendToServer({ type: 'setMargin', pct });
+      console.log('[SLIDER HOTFIX] EMIT setMargin', pct, 'via', who);
+      toast('setMargin → ' + pct + (who ? ' ('+who+')' : ' (no-ws)'));
+    }, 180);
+    const handler = (e) => {
+      const v = e.target ? e.target.value : e;
+      console.log('[SLIDER HOTFIX] live', v);
+      liveLabel(v);
+      emit(v);
+    };
+    try{
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    }catch(e){
+      console.warn('[SLIDER HOTFIX] addEvent err', e);
+    }
+    console.log('[SLIDER HOTFIX] bound to element', el);
+    return true;
+  }
+  if(!window.__SLIDER_HOTFIX_MO__){
+    const mo = new MutationObserver(()=>{
+      bindSliderOnce();
+    });
+    mo.observe(document.body, { childList:true, subtree:true });
+    window.__SLIDER_HOTFIX_MO__ = mo;
+    console.log('[SLIDER HOTFIX] MO started');
+  }
+  if(!bindSliderOnce()){
+    console.warn('[SLIDER HOTFIX] slider not found immediately — MO will wait for it');
+    toast('slider bind waiting...');
+  } else {
+    toast('slider bound');
+  }
+})();
