@@ -1,0 +1,132 @@
+﻿// Unified frontend app.js - replaces public/app.js
+(function(){
+  // Helpers to find DOM nodes (adjust selectors if your markup differs)
+  const $ = s => document.querySelector(s);
+  const priceEl = $('#price') || (function(){ let n=document.createElement('div'); n.id='price'; n.style.display='none'; document.body.appendChild(n); return n; })();
+  const equityEl = $('#equity') || (function(){ let n=document.createElement('div'); n.id='equity'; n.style.display='none'; document.body.appendChild(n); return n; })();
+  const marginLabel = document.querySelector('label[for="margin"]') || document.querySelector('.margin-label') || (function(){ let n=document.createElement('div'); n.className='margin-label'; n.style.display='none'; document.body.appendChild(n); return n; })();
+  const slider = document.querySelector('input[type="range"]') || document.querySelector('#margin');
+  const modeEl = document.querySelector('#mode') || document.querySelector('select[name="mode"]');
+  const levEl = document.querySelector('select[name*="leverage" i], input[name*="leverage" i]') || document.querySelector('input[type="number"]');
+  // position box fields (try common selectors, fallbacks below)
+  const posSide = document.querySelector('.position .side') || document.querySelector('.pos-side') || null;
+  const posQty = document.querySelector('.position .qty') || document.querySelector('.pos-qty') || null;
+  const posEntry = document.querySelector('.position .entry') || document.querySelector('.pos-entry') || null;
+  const posMark = document.querySelector('.position .mark') || document.querySelector('.pos-mark') || null;
+  const posPnl = document.querySelector('.position .pnl') || document.querySelector('.pos-pnl') || null;
+
+  function safeText(el, v){ if(!el) return; el.textContent = (typeof v === 'number')? v.toString() : (v===null||v===undefined? '-' : String(v)); }
+
+  // UI update routine
+  function applyInitState(s){
+    if(!s) return;
+    if(typeof s.price !== 'undefined') safeText(priceEl, Number(s.price).toLocaleString(undefined,{maximumFractionDigits:2}));
+    if(typeof s.equity !== 'undefined') safeText(equityEl, Number(s.equity).toLocaleString(undefined,{maximumFractionDigits:2}));
+    if(typeof s.initialMarginPct !== 'undefined'){
+      if(slider) { slider.value = s.initialMarginPct; }
+      if(marginLabel) { marginLabel.textContent = 'Initial Margin: ' + s.initialMarginPct + '%'; }
+    }
+    if(typeof s.leverage !== 'undefined' && levEl){ levEl.value = s.leverage; }
+    if(s.position){
+      if(posSide) safeText(posSide, s.position.side || '-');
+      if(posQty) safeText(posQty, s.position.quantity || s.position.qty || 0);
+      if(posEntry) safeText(posEntry, s.position.entryPrice || 0);
+      if(posMark) safeText(posMark, s.position.markPrice || 0);
+      if(posPnl) safeText(posPnl, s.position.pnl || 0);
+    }
+  }
+
+  // WebSocket init - connect to same host
+  function connectWS(){
+    try{
+      if(window.__LOGWA_WS__ && window.__LOGWA_WS__.readyState === WebSocket.OPEN) return;
+      const proto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+      const url = proto + location.host;
+      window.__LOGWA_WS__ = new WebSocket(url);
+      window.__LOGWA_WS__.onopen = () => { console.info('[app.js] WS open -> requesting init'); /* optionally request init */ };
+      window.__LOGWA_WS__.onmessage = function(ev){
+        let data;
+        try{ data = JSON.parse(ev.data); }catch(e){ return; }
+        // handle common server messages
+        if(data.type === 'price'){
+          applyInitState({ price: data.price, equity: data.equity, pnl: data.pnl });
+        } else if(data.type === 'init'){
+          applyInitState(data.state || data);
+        } else if(data.type === 'kline'){
+          // ignore or handle small UI signals if needed
+        } else if(data.type === 'equity'){
+          applyInitState({ equity: data.equity });
+        } else if(data.type === 'ok' || data.type === 'orderResult' || data.type === 'orderError'){
+          console.debug('[app.js] server ->', data);
+        } else {
+          // generic: try merge state
+          if(data.price || data.equity || data.state) applyInitState(Object.assign({}, data.state||data, { price: data.price, equity: data.equity }));
+        }
+      };
+      window.__LOGWA_WS__.onclose = ()=>{ console.warn('[app.js] WS closed - reconnect in 2s'); setTimeout(connectWS,2000); };
+      window.__LOGWA_WS__.onerror = (e)=>{ console.warn('[app.js] WS error', e); };
+    }catch(e){
+      console.error('[app.js] ws connect failed', e);
+    }
+  }
+
+  // Attach UI controls to WS (safe wrappers)
+  function sendWS(obj){
+    try{
+      if(window.__LOGWA_WS__ && window.__LOGWA_WS__.readyState === WebSocket.OPEN){
+        window.__LOGWA_WS__.send(JSON.stringify(obj));
+      } else {
+        // fallback to REST if needed
+        if(obj.type === 'setMargin'){
+          fetch('/api/computeQtyTest?marginPct=' + encodeURIComponent(obj.pct)).catch(()=>{});
+        }
+        if(obj.type === 'setLeverage'){
+          // no-op fallback
+        }
+      }
+    }catch(e){ console.warn('[app.js] send err', e); }
+  }
+
+  // Attach UI listeners (safe: only attach once)
+  function attachUI(){
+    try{
+      if(slider){
+        slider.removeEventListener('change', slider._app_change);
+        slider._app_change = function(){ const pct = Number(slider.value||0); if(marginLabel) marginLabel.textContent = 'Initial Margin: ' + pct + '%'; sendWS({ type:'setMargin', pct }); };
+        slider.addEventListener('change', slider._app_change);
+      }
+      if(levEl){
+        levEl.removeEventListener('change', levEl._app_change);
+        levEl._app_change = function(){ const v = Number(levEl.value||1); sendWS({ type:'setLeverage', leverage: v }); };
+        levEl.addEventListener('change', levEl._app_change);
+      }
+      const startBtn = document.querySelector('#start') || Array.from(document.querySelectorAll('button')).find(b=>/start auto/i.test(b.innerText||b.value||''));
+      if(startBtn){
+        startBtn.removeEventListener('click', startBtn._app_click);
+        startBtn._app_click = async function(){
+          console.log('[app.js] start -> POST /api/auto/start');
+          try{ const r = await fetch('/api/auto/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:(modeEl?modeEl.value:'real'), symbol:'BTCUSDT'})}); console.log('[app.js] start resp', r.status); }catch(e){ console.error('[app.js] start err', e); }
+        };
+        startBtn.addEventListener('click', startBtn._app_click);
+      }
+    }catch(e){ console.warn('[app.js] attachUI err', e); }
+  }
+
+  // initial poll to populate values until ws init arrives
+  async function initialPopulate(){
+    try{
+      const p = await fetch('/api/price').then(r=>r.json().catch(()=>null)).catch(()=>null);
+      if(p && p.ok) applyInitState({ price: p.price, equity: p.equity });
+      const pos = await fetch('/api/position?symbol=BTCUSDT').then(r=>r.json().catch(()=>null)).catch(()=>null);
+      if(pos && pos.ok && Array.isArray(pos.data) && pos.data.length) applyInitState({ position: pos.data[0], leverage: pos.data[0].leverage });
+    }catch(e){}
+  }
+
+  // bootstrap
+  connectWS();
+  attachUI();
+  initialPopulate();
+  // expose for debug
+  window.__APP_FRONTEND__ = { applyInitState, connectWS, attachUI };
+  console.log('[app.js] frontend loaded');
+})();

@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bot V8 — Scalping Auto (Real)</title>
+  <style>
+    body{font-family: Inter, system-ui, Arial; padding:18px;background:#f6f8fb}
+    .card{padding:14px;border-radius:10px;box-shadow:0 4px 18px rgba(185, 7, 7, 0.06);max-width:520px;background:#fff;margin:auto}
+    .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+    .label{color:#666}
+    .big{font-weight:700;font-size:1.1rem}
+    input[type=range]{width:100%}
+    button{padding:10px 14px;border-radius:8px;border:0;background:#127c04;color:#0c0c0c;cursor:pointer}
+    button.secondary{background:#a10404}
+    .pos{margin-top:12px;padding:10px;border-radius:8px;background:#f3f6ff}
+    .small{font-size:0.9rem;color:#444}
+    select{padding:6px;border-radius:6px;border:1px solid #ddd}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>BOT V8 — Scalping Auto (Real)</h3>
+
+    <div class="row"><div class="label">BTC Price</div><div id="price" class="big">-</div></div>
+    <div class="row"><div class="label">Equity</div><div id="equity" class="big">-</div></div>
+
+    <div style="margin:8px 0">
+      
+      <input id="margin" type="range" min="0" max="100" value="10" />
+    </div>
+
+    <div class="row"><div class="label">PnL</div><div id="pnl" class="big">-</div></div>
+
+    <div class="row" style="gap:8px;align-items:center;">
+      <div style="flex:1">
+        <div class="label">Mode</div>
+        <select id="mode">
+          <option value="long">LONG</option>
+          <option value="short">SHORT</option>
+          <option value="auto">AUTO</option>
+        </select>
+      </div>
+      <div style="width:120px">
+        <div class="label">Leverage</div>
+        <input id="leverage" type="number" min="1" value="1" style="width:100%"/>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <button id="start">START AUTO TRADE</button>
+      <button id="close" class="secondary">CLOSE POS</button>
+    </div>
+
+    <div class="pos" id="positionPanel">
+      <div class="small" style="margin-bottom:6px"><strong>Position (REAL)</strong></div>
+      <div class="row"><div class="label">Side</div><div id="posSide">-</div></div>
+      <div class="row"><div class="label">Qty</div><div id="posQty">-</div></div>
+      <div class="row"><div class="label">Entry Price</div><div id="posEntry">-</div></div>
+      <div class="row"><div class="label">Mark Price</div><div id="posMark">-</div></div>
+      <div class="row"><div class="label">Unrealized PnL</div><div id="posUPnl">-</div></div>
+      <div style="margin-top:8px"><button id="closeReal" class="secondary">CLOSE REAL POSITION</button></div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

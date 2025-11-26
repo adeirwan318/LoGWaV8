@@ -1,0 +1,74 @@
+﻿// === UI permanent handlers for slider / leverage / mode / start ===
+// Paste this at the end of public/app.js (one-time)
+(function(){
+  // ensure existing ws or create one
+  try{
+    if(!window.__LOGWA_WS__ || window.__LOGWA_WS__.readyState !== WebSocket.OPEN){
+      window.__LOGWA_WS__ = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+      window.__LOGWA_WS__.addEventListener('open', ()=>console.log('[UI] ws open'));
+      window.__LOGWA_WS__.addEventListener('message', m=>{ /* optional: handle server pushes */ });
+    }
+  }catch(e){ console.warn('[UI] ws init failed', e); }
+
+  function sendWS(obj){
+    try{
+      if(window.__LOGWA_WS__ && window.__LOGWA_WS__.readyState === WebSocket.OPEN){
+        window.__LOGWA_WS__.send(JSON.stringify(obj));
+      } else {
+        // fallback: try simple HTTP POST for safety (server has /api/auto/start etc.)
+        if(obj.type === 'setMargin'){
+          fetch('/api/computeQtyTest?marginPct=' + encodeURIComponent(obj.pct)).catch(()=>{});
+        }
+      }
+    }catch(e){ console.warn('[UI] sendWS err', e); }
+  }
+
+  // slider -> setMargin
+  const slider = document.querySelector('input[type="range"]');
+  if(slider){
+    slider.addEventListener('change', ()=> {
+      const pct = Number(slider.value);
+      console.log('[UI] setMargin ->', pct);
+      sendWS({ type:'setMargin', pct });
+    }, {capture:false});
+  }
+
+  // leverage control -> setLeverage
+  const lev = document.querySelector('select[name*="leverage" i], input[name*="leverage" i]') || document.querySelector('input[type="number"]');
+  if(lev){
+    lev.addEventListener('change', ()=> {
+      const v = Number(lev.value);
+      console.log('[UI] setLeverage ->', v);
+      sendWS({ type:'setLeverage', leverage: v });
+    }, {capture:false});
+  }
+
+  // mode select -> store locally and (optional) trigger behavior
+  const modeEl = document.querySelector('#mode') || Array.from(document.querySelectorAll('select')).find(s=>/mode/i.test(s.id||s.name||s.className));
+  if(modeEl){
+    modeEl.addEventListener('change', ()=>{
+      const m = (modeEl.value||modeEl.innerText||'AUTO').toLowerCase();
+      console.log('[UI] mode ->', m);
+      // if user switches to "AUTO" we don't auto-start; Start button still authorizes start
+      // when user switches to real auto mode, we can optionally auto-start; comment below if undesired
+      // if(m === 'auto'){ /* optional auto-start */ }
+    }, {capture:false});
+  }
+
+  // Start button -> call backend start endpoint (permanent)
+  const startBtn = document.querySelector('#start') || Array.from(document.querySelectorAll('button')).find(b=>/start auto/i.test(b.innerText||b.value||''));
+  if(startBtn){
+    startBtn.addEventListener('click', async (e) => {
+      console.log('[UI] START clicked -> calling /api/auto/start');
+      try{
+        const resp = await fetch('/api/auto/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode:'real', symbol:'BTCUSDT' }) });
+        const j = await resp.json().catch(()=>null);
+        console.log('[UI] start ->', resp.status, j);
+      }catch(err){
+        console.error('[UI] start error', err);
+      }
+    });
+  }
+
+  console.log('[UI] permanent handlers attached');
+})();
